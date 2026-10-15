@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>pi-d · remote</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="brand">pi-d</a><span class="remote-label">remote</span>
+    <span class="header-rule" aria-hidden="true"></span>
+    <div class="top-actions"><span id="connection" class="badge">connecting</span><button id="logout" class="quiet" hidden>sign out</button></div>
+  </header>
+  <div id="notice" class="notice" role="status" hidden></div>
+  <main>
+    <section id="login" class="login-panel" hidden>
+      <h1>Private session access</h1>
+      <p>Enter the access token from this computer’s private pi-d-web configuration. The token is never put in a URL.</p>
+      <form id="login-form">
+        <label for="token">Access token</label>
+        <input id="token" type="password" autocomplete="current-password" spellcheck="false" required>
+        <button id="login-button" type="submit">connect</button>
+      </form>
+      <p class="muted">Use your Tailscale connection. Your computer and the selected pi-d session must remain running.</p>
+    </section>
+    <section id="tailscale-required" class="login-panel" hidden>
+      <h1>Tailscale access required</h1>
+      <p>Open this page using its private Tailscale HTTPS address from an allowed Tailscale account.</p>
+      <p class="muted">There is no separate access code. Check that Tailscale is connected and signed into the correct account, then refresh.</p>
+    </section>
+    <section id="session-list" class="session-list" hidden>
+      <h1>Sessions</h1>
+      <p class="muted">Choose a conversation. Each session has its own stable address.</p>
+      <div id="session-cards" class="cards"></div>
+      <p id="empty-sessions" class="muted">No sessions connected yet. Load the extension in pi-d and ask it to enable web access.</p>
+    </section>
+    <section id="session-view" class="session-view" hidden>
+      <div class="chat-frame">
+        <div class="session-heading"><h1 id="session-name">Session</h1><p id="session-meta" class="muted"></p></div>
+        <div class="toolbar"><button id="older" class="quiet">earlier</button><button id="refresh" class="quiet">refresh</button><button id="interrupt" class="danger" disabled>interrupt</button></div>
+        <div id="transcript" class="transcript" aria-label="Conversation history" tabindex="0">
+          <div id="entries"></div>
+          <article id="live-panel" class="entry assistant live" hidden><div class="entry-label"><span class="entry-marker" aria-hidden="true">●</span><span class="entry-title">Assistant</span><span class="entry-meta">live</span></div><pre id="partial"></pre><details id="live-tools" hidden><summary>↳ Live tools</summary><pre id="tool-output"></pre></details><p id="live-info" class="muted"></p></article>
+        </div>
+        <details id="queue-panel" class="queue" hidden><summary id="queue-title">Queued inputs</summary><pre id="queue-content"></pre></details>
+      </div>
+      <form id="compose" class="compose">
+        <div class="composer-heading"><span id="composer-help">Enter send · Shift+Enter newline</span></div>
+        <label for="message" class="sr-only">Message to this session</label>
+        <textarea id="message" rows="3" placeholder="Message…" maxlength="65536" enterkeyhint="send" aria-describedby="composer-help composer-state"></textarea>
+        <div class="compose-actions"><label for="mode" class="sr-only">When the session is busy</label><select id="mode"><option value="reject" selected>Only when idle</option><option value="steer">Steer</option><option value="followUp">Follow-up</option></select><span id="delivery" class="muted"></span><button id="send" type="submit" disabled>Send</button></div>
+        <p id="composer-state" class="muted" role="status" hidden></p>
+        <p id="pending-help" class="muted" hidden>Delivery is unconfirmed. Retry keeps the same request ID, so it cannot create a second native submission. This browser tab retains your pending message.</p>
+      </form>
+      <footer class="statusbar" aria-label="Session status"><span id="activity" class="badge" data-phase="offline">● offline</span><span id="model-name" class="muted"></span><span id="queue-count"></span></footer>
+    </section>
+  </main>
+</body>
+</html>

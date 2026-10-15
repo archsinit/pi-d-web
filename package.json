@@ -1,0 +1,14 @@
+{
+  "name": "pi-d-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A private, lightweight mobile web bridge for stock pi-d Durable sessions",
+  "engines": { "node": ">=22.19.0" },
+  "bin": { "pi-d-web": "cli.mjs" },
+  "scripts": {
+    "start": "node cli.mjs serve",
+    "check": "node --check cli.mjs && node --check extension.mjs && node --check src/config.mjs && node --check src/wire.mjs && node --check src/auth.mjs && node --check src/transcript.mjs && node --check src/server.mjs && node --check src/service.mjs && node --check web/app.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.mjs"
+  }
+}

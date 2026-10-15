@@ -1,0 +1,16 @@
+node_modules/
+.DS_Store
+coverage/
+*.log
+
+# Private local configuration and session stores
+.env
+.env.*
+config.json
+access-token
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
