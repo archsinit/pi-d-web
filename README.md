@@ -9,7 +9,7 @@ A lightweight, private web interface for existing **pi-d** conversations. Follow
 
 ## Requirements
 
-Node.js **22.19+**, a POSIX host, pi-d with the **`piD` slash-command API** and its pinned **Durable 1.2.0** SDK, and Tailscale. Managed service start/stop supports **macOS**; other POSIX systems can run the service in the foreground.
+Node.js **22.19+**, a POSIX host, pi-d with the **`piD` slash-command and toast APIs** and its pinned **Durable 1.2.0** SDK, and Tailscale. Managed service start/stop supports **macOS**; other POSIX systems can run the service in the foreground.
 
 ## Setup
 
@@ -51,7 +51,7 @@ Restart pi-d and run **`/web start`**, then open the returned URL. Each conversa
 | `/web disconnect` | Disconnect only this conversation | `web_disconnect` |
 | `/web stop --all` | Stop the shared web server for **all sessions** | `web_stop` |
 
-Slash commands run locally without a model call, with help and Tab completion. Use `/web` for usage; names may contain spaces (up to 80 characters). The model tools remain available for natural-language requests. `/web status` never resumes paused work; other controls require authentication/recovery to be ready. Escape/Ctrl+C cancels a command, but already committed changes may remain—check status before retrying.
+Slash commands run locally without a model call, with help and Tab completion. Results appear in **top-left notification boxes**, not the bottom info bar. Confirmations disappear after five seconds; help, URLs, and errors stay until you click **×**. Dismiss a persistent notification to see any queued ones. These are local UI only—not saved messages or model context. Use `/web` for usage; names may contain spaces (up to 80 characters). The model tools remain available for natural-language requests. `/web status` never resumes paused work; other controls require authentication/recovery to be ready. Escape/Ctrl+C cancels a command, but already committed changes may remain—check status before retrying.
 
 On macOS, the CLI also provides `node cli.mjs start`, `status`, and `stop`. The service survives closing a terminal, but does not start automatically after login or reboot. On other POSIX systems, run `node cli.mjs serve` in a separate terminal and use `web_connect` to connect the conversation.
 

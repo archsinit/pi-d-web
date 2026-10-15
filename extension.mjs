@@ -242,17 +242,27 @@ const WEB_COMPLETIONS = [
   { value: "stop --all", label: "stop --all", description: "Stop the shared web server for ALL sessions" },
 ];
 
-async function executeWebCommand(argument, { harness, conversation, signal, context, notify }) {
+async function executeWebCommand(argument, api) {
+  try { await runWebCommand(argument, api); }
+  catch (error) {
+    api.signal.throwIfAborted(); // Preserve host cancellation; never show a late error notification.
+    api.toast(error instanceof Error ? error.message : "Web command failed. Check /web status before retrying.", { type: "error", timeoutMs: 0 });
+  }
+}
+
+async function runWebCommand(argument, { harness, conversation, signal, context, toast }) {
   signal.throwIfAborted();
   const match = argument.trim().match(/^(\S+)(?:\s+([\s\S]*))?$/);
   const action = match?.[1] ?? "help", rest = match?.[2]?.trim() ?? "";
-  if (action === "help" && !rest) { notify(WEB_USAGE); return; }
+  if (action === "help" && !rest) { toast(WEB_USAGE, { type: "info", timeoutMs: 0 }); return; }
   if (action === "status" && !rest) {
     const status = await webStatus(harness, conversation.id, context);
     const state = !status.conversation.enabled ? "disabled" : status.conversation.connected ? "connected" : "enabled, offline";
     const owner = status.service.running ? status.service.managed ? " (managed)" : " (external)" : "";
     signal.throwIfAborted();
-    notify(`Web service: ${status.service.state}${owner}. This conversation: ${state}.${status.conversation.url ? ` ${status.conversation.url}` : ""}`);
+    toast(`Web service: ${status.service.state}${owner}. This conversation: ${state}.${status.conversation.url ? `\n${status.conversation.url}` : ""}`, {
+      type: "info", timeoutMs: status.conversation.url ? 0 : 5000,
+    });
     return;
   }
   if (action === "stop" && rest !== "--all") throw new Error("Stopping affects ALL sessions. Use /web stop --all, or /web disconnect for only this conversation.");
@@ -265,13 +275,13 @@ async function executeWebCommand(argument, { harness, conversation, signal, cont
     if (action === "start") await startService(defaultHome(), { signal });
     const link = await connectBridge(harness, conversation.id, rest || undefined, agent.cwd, context);
     signal.throwIfAborted();
-    notify(`Web bridge enabled: ${link.url}`);
+    toast(`Web bridge enabled:\n${link.url}`, { type: "success", timeoutMs: 0 });
     return;
   }
   if (action === "disconnect") {
     await disconnectBridge(harness, conversation.id, context);
     signal.throwIfAborted();
-    notify("Web bridge disconnected. The shared service and stable session URL are retained.");
+    toast("Web bridge disconnected. The shared service and stable session URL are retained.", { type: "success", timeoutMs: 5000 });
     return;
   }
   const home = defaultHome();
@@ -280,7 +290,7 @@ async function executeWebCommand(argument, { harness, conversation, signal, cont
   await disconnectBridge(harness, conversation.id, context);
   await stopService(home, { signal });
   signal.throwIfAborted();
-  notify("Shared web service stopped for ALL sessions. pi-d and foreground work were not stopped.");
+  toast("Shared web service stopped for ALL sessions. pi-d and foreground work were not stopped.", { type: "success", timeoutMs: 5000 });
 }
 
 export default defineChatExtension({

@@ -17,10 +17,19 @@ function useHome(home) {
   };
 }
 
-async function command(session, argument, signal = new AbortController().signal) {
-  let notice;
-  assert.equal(await executeExtensionCommand(session, "web", argument, { setNotice: (value) => { notice = value; } }, signal), true);
-  return notice;
+async function command(session, argument, signal = new AbortController().signal, expected) {
+  const toasts = [];
+  assert.equal(await executeExtensionCommand(session, "web", argument, {
+    setNotice: () => assert.fail("Web command output must not use the bottom info bar"),
+    addExtensionMessage: () => assert.fail("Web command output should use a toast, not a scrollback message"),
+    addExtensionToast: (source, text, options) => toasts.push({ source, text, options }),
+  }, signal), true);
+  assert.equal(toasts.length, 1, "Every completed command must produce exactly one top-left notification.");
+  assert.equal(toasts[0].source, "pi-d-web /web");
+  assert(["info", "success", "error"].includes(toasts[0].options.type));
+  assert([0, 5000].includes(toasts[0].options.timeoutMs));
+  if (expected) assert.deepEqual(toasts[0].options, expected);
+  return toasts[0].text;
 }
 
 async function unusedPort() {
@@ -31,25 +40,26 @@ async function unusedPort() {
   return port;
 }
 
-test("slash help works before configuration and invalid commands have no effects", async () => {
+test("slash help and errors use persistent top-left notifications without configuration or model effects", async () => {
   const home = await mkdtemp("/tmp/pi-d-web-command-config-");
   const directory = await mkdtemp("/tmp/pi-d-web-command-help-");
   const restore = useHome(home);
   let session;
   try {
     session = await openFixtureSession(directory);
-    assert.match(await command(session, ""), /Usage: \/web start/);
-    assert.match(await command(session, "help"), /stop --all/);
+    const info = { type: "info", timeoutMs: 0 }, error = { type: "error", timeoutMs: 0 };
+    assert.match(await command(session, "", undefined, info), /Usage: \/web start/);
+    assert.match(await command(session, "help", undefined, info), /stop --all/);
     for (const argument of ["unknown", "help extra", "status extra", "disconnect --all"]) {
-      await assert.rejects(command(session, argument), /Usage: \/web/);
+      assert.match(await command(session, argument, undefined, error), /Usage: \/web/);
     }
     for (const argument of ["stop", "stop extra", "stop --all extra", "stop --all --all"]) {
-      await assert.rejects(command(session, argument), /Stopping affects ALL sessions/);
+      assert.match(await command(session, argument, undefined, error), /Stopping affects ALL sessions/);
     }
     for (const action of ["start", "connect"]) {
-      await assert.rejects(command(session, `${action} ${"n".repeat(81)}`), /at most 80/);
+      assert.match(await command(session, `${action} ${"n".repeat(81)}`, undefined, error), /at most 80/);
     }
-    await assert.rejects(command(session, "status"), { code: "ENOENT" });
+    assert.match(await command(session, "status", undefined, error), /ENOENT/);
     assert.deepEqual(await readdir(home), [], "Help and invalid commands must not initialize private configuration.");
     assert.equal((await session.harness.inspect(context)).scheduling, "paused");
     assert.equal((await session.harness.inspect(context)).tasks.length, 0);
@@ -75,9 +85,9 @@ test("host registration, completion and status are selected-only, model-free and
     assert.deepEqual((await web.getArgumentCompletions("st")).map((item) => item.value), ["start", "status", "stop --all"]);
     assert.deepEqual((await web.getArgumentCompletions("stop ")).map((item) => item.value), ["stop --all"]);
     assert.deepEqual(await web.getArgumentCompletions("connect My project"), []);
-    assert.match(await command(session, "status"), /running \(external\).*disabled/);
+    assert.match(await command(session, "status", undefined, { type: "info", timeoutMs: 5000 }), /running \(external\).*disabled/);
     for (const action of ["start", "connect", "disconnect", "stop --all"]) {
-      await assert.rejects(command(session, action), /Session scheduling is paused/);
+      assert.match(await command(session, action, undefined, { type: "error", timeoutMs: 0 }), /Session scheduling is paused/);
     }
     assert.equal((await session.harness.inspect(context)).scheduling, "paused", "Local controls must not bypass the host's auth/recovery gate.");
     assert.equal((await session.harness.inspect(context)).tasks.length, 0);
@@ -86,7 +96,8 @@ test("host registration, completion and status are selected-only, model-free and
     assert.deepEqual((await serviceStatus(f.home)).sessionIds, []);
     await session.conversation.configure({ extensions: [] }, context);
     assert(!(await extensionCommands(session, signal)).some((item) => item.name === "web"));
-    assert.equal(await executeExtensionCommand(session, "web", "status", { setNotice: () => assert.fail("Deselected command ran") }, signal), false);
+    const unexpected = () => assert.fail("Deselected command ran");
+    assert.equal(await executeExtensionCommand(session, "web", "status", { setNotice: unexpected, addExtensionMessage: unexpected, addExtensionToast: unexpected }, signal), false);
   } finally {
     await session?.harness.close(context); await f.cleanup(); restore();
     await rm(directory, { recursive: true, force: true });
@@ -103,18 +114,18 @@ test("slash bridges recover, share native tasks with model tools and disconnect 
   try {
     session = await openFixtureSession(directory, [], { faux });
     session.harness.resume(); // Simulate the host having completed its normal readiness check.
-    const notice = await command(session, "connect My project");
+    const notification = await command(session, "connect My project", undefined, { type: "success", timeoutMs: 0 });
     const list = await until(f.list, (items) => items.length === 1 && items[0].connected);
     const id = list[0].id, url = `${f.origin}/s/${id}`;
-    assert.equal(list[0].name, "My project"); assert(notice.includes(url));
+    assert.equal(list[0].name, "My project"); assert(notification.includes(`\n${url}`));
     const originalTask = (await bridgeTasks(session.harness))[0].record;
     assert.equal(originalTask.background, true);
     await command(session, "connect My project");
     assert.deepEqual((await bridgeTasks(session.harness)).map((item) => item.record.id), [originalTask.id]);
     assert.equal(faux.state.callCount, 0); assert.equal((await session.conversation.context(context)).entries.length, 0);
 
-    await assert.rejects(command(session, "stop"), /Stopping affects ALL sessions/);
-    await assert.rejects(command(session, "stop --all"), /another supervisor/);
+    assert.match(await command(session, "stop", undefined, { type: "error", timeoutMs: 0 }), /Stopping affects ALL sessions/);
+    assert.match(await command(session, "stop --all", undefined, { type: "error", timeoutMs: 0 }), /another supervisor/);
     assert((await f.list())[0].connected, "Refusing an external service stop must not disconnect the conversation.");
     const cancelled = new AbortController(); cancelled.abort(new Error("Fixture cancelled"));
     await assert.rejects(command(session, "disconnect", cancelled.signal), /Fixture cancelled/);
@@ -124,7 +135,8 @@ test("slash bridges recover, share native tasks with model tools and disconnect 
     await session.harness.close(context); session = undefined;
     await until(f.list, (items) => !items[0].connected);
     session = await openFixtureSession(directory, [], { file, faux });
-    assert.match(await command(session, "status"), /enabled, offline/);
+    const status = await command(session, "status", undefined, { type: "info", timeoutMs: 0 });
+    assert.match(status, /enabled, offline/); assert(status.includes(url));
     assert.equal((await session.harness.inspect(context)).scheduling, "paused");
     session.harness.resume();
     await until(f.list, (items) => items[0].id === id && items[0].connected);
@@ -142,7 +154,7 @@ test("slash bridges recover, share native tasks with model tools and disconnect 
     await until(() => session.harness.snapshot(sdk.LiveDoc, session.conversation.id, context), (live) => live?.run && live.generation?.message);
     const calls = faux.state.callCount;
     assert.match(await command(session, "status"), /This conversation: connected/);
-    assert.match(await command(session, "disconnect"), /disconnected/);
+    assert.match(await command(session, "disconnect", undefined, { type: "success", timeoutMs: 5000 }), /disconnected/);
     await until(f.list, (items) => !items[0].connected);
     assert.equal((await bridgeTasks(session.harness)).length, 0);
     assert((await session.harness.snapshot(sdk.LiveDoc, session.conversation.id, context)).run, "Disconnect must leave foreground model work running.");
@@ -170,7 +182,8 @@ test("slash status cancellation closes its invocation-owned IPC socket and never
     server.listen(socketPath(home)); await once(server, "listening"); await chmod(socketPath(home), 0o600);
     session = await openFixtureSession(directory);
     const abort = new AbortController();
-    const pending = executeExtensionCommand(session, "web", "status", { setNotice: () => assert.fail("Cancelled status notified late") }, abort.signal);
+    const unexpected = () => assert.fail("Cancelled status produced late presentation");
+    const pending = executeExtensionCommand(session, "web", "status", { setNotice: unexpected, addExtensionMessage: unexpected, addExtensionToast: unexpected }, abort.signal);
     await until(() => sockets.size === 1);
     abort.abort(new Error("Fixture cancelled"));
     await assert.rejects(pending, /Fixture cancelled/);
@@ -198,9 +211,9 @@ test("managed slash start/stop are model-free, idempotent and explicitly scoped 
     a = await openFixtureSession(directoryA); b = await openFixtureSession(directoryB);
     a.harness.resume(); b.harness.resume();
     assert.match(await command(a, "status"), /stopped.*disabled/);
-    const notice = await command(a, "start Managed project");
+    const notification = await command(a, "start Managed project", undefined, { type: "success", timeoutMs: 0 });
     const first = await until(() => serviceStatus(home), (status) => status.managed && status.sessionIds.length === 1);
-    const idA = first.sessionIds[0]; assert(notice.includes(`/s/${idA}`));
+    const idA = first.sessionIds[0]; assert(notification.includes(`/s/${idA}`));
     await command(a, "start");
     assert.equal((await serviceStatus(home)).instanceId, first.instanceId);
     assert.equal((await bridgeTasks(a.harness)).length, 1);
@@ -208,7 +221,7 @@ test("managed slash start/stop are model-free, idempotent and explicitly scoped 
     const both = await until(() => serviceStatus(home), (status) => status.sessionIds.length === 2);
     assert.equal(both.instanceId, first.instanceId);
     const idB = both.sessionIds.find((id) => id !== idA), taskB = (await bridgeTasks(b.harness))[0].record.id;
-    await assert.rejects(command(a, "stop"), /Stopping affects ALL sessions/);
+    assert.match(await command(a, "stop", undefined, { type: "error", timeoutMs: 0 }), /Stopping affects ALL sessions/);
     assert.equal((await serviceStatus(home)).sessionIds.length, 2);
     await command(a, "disconnect");
     const other = await until(() => serviceStatus(home), (status) => status.sessionIds.length === 1);
@@ -216,7 +229,7 @@ test("managed slash start/stop are model-free, idempotent and explicitly scoped 
     assert.equal((await bridgeTasks(a.harness)).length, 0); assert.equal((await bridgeTasks(b.harness)).length, 1);
     assert((await command(a, "start")).includes(`/s/${idA}`));
     await until(() => serviceStatus(home), (status) => status.sessionIds.length === 2);
-    assert.match(await command(a, "stop --all"), /stopped for ALL sessions/);
+    assert.match(await command(a, "stop --all", undefined, { type: "success", timeoutMs: 5000 }), /stopped for ALL sessions/);
     assert.equal((await serviceStatus(home)).running, false);
     assert.equal((await bridgeTasks(a.harness)).length, 0); assert.equal((await bridgeTasks(b.harness)).length, 1);
     assert.match(await command(a, "status"), /stopped.*disabled/);
