@@ -35,6 +35,7 @@ export const { fauxProvider, fauxAssistantMessage, fauxToolCall } = await hostIm
 export const { openNodeSqliteStorage } = await hostImport("@earendil-works/pi-durable/storage/sqlite/node");
 const { codingRegistry, codingEnv } = await import(pathToFileURL(join(root, "src/coding.ts")).href);
 const { Resources } = await import(pathToFileURL(join(root, "src/resources.ts")).href);
+export const { executeExtensionCommand, extensionCommands } = await import(pathToFileURL(join(root, "src/extension-ui.ts")).href);
 const extension = fileURLToPath(new URL("../extension.mjs", import.meta.url));
 export const call = (name, args = {}) => fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });
 export const bridgeTasks = async (harness) => (await harness.inspect(context)).tasks.filter((task) => task.record.kind === "pi-d-web.bridge");
